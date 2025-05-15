@@ -1,0 +1,45 @@
+{
+    "image": {
+            "path": "images/single.png",
+            "width": 1280,
+            "height": 720
+    },
+    "keypoints": {
+        "center": [
+            {
+                "x": 10,
+                "y": 20,
+                "visiable": 1
+            }
+        ],
+        "pointer": [
+            {
+                "x": 30,
+                "y": 40,
+                "visiable": 1
+            },
+            {
+                "x": 50,
+                "y": 60,
+                "visiable": 1
+            }
+        ],
+        "tick": [
+            {
+                "x": 70,
+                "y": 80,
+                "visiable": 1
+            },
+            {
+                "x": 90,
+                "y": 100,
+                "visiable": 1
+            },
+            {
+                "x": 110,
+                "y": 120,
+                "visiable": 1
+            }
+        ]
+    }
+}
