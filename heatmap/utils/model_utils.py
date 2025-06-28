@@ -25,7 +25,7 @@ def get_model_info(model: nn.Module, \
                    max_points_per_category: int, \
                    image_size) -> str:
     image = torch.randn(1, 3, *image_size).to(next(model.parameters()).device)
-    mask = torch.randn(1, num_heatmap+1, *image_size).to(next(model.parameters()).device)
+    mask = torch.randn(1, num_heatmap, *image_size).to(next(model.parameters()).device)
     kpts_xy = torch.randn(1, num_heatmap, max_points_per_category, 2).to(next(model.parameters()).device)
     kpts_visible = torch.randn(1, num_heatmap, max_points_per_category).to(next(model.parameters()).device)
     
@@ -106,7 +106,7 @@ def optimize_model(model: nn.Module) -> nn.Module:
             m.forward = m.fuseforward  # update forward
 
     for m in model.modules():
-        if type(m) in [RepSConv,RepBottleneck] and not hasattr(m, "RepSConv"):
+        if type(m) in [RepSConv] and not hasattr(m, "RepSConv"):
             m.switch_to_deploy()
             m.forward = m.fuseforward  # update forward
 

@@ -10,6 +10,7 @@ import torch.nn.functional as F
 
 from heatmap.utils import basic
 from heatmap.models.losses import FocalLoss, HeatmapLoss, BalanceLoss, DiceLoss, UncertaintyLoss
+from heatmap.models.metrics import HeatmapMetric, SimilarityMetric, IOUMetric
 
 # 模型框架
 class HEATMAP(nn.Module):
@@ -24,8 +25,8 @@ class HEATMAP(nn.Module):
                 preproc=None, # 数据预处理 basenorm/deepnorm
                 backbone=None, # regnet
                 neck=None, # fpn
-                head=None, # bev head
-                aux_head_list=[], # 辅助bev head
+                head=None, # head
+                aux_head_list=[], # 辅助head
                 task="kpts"
             ):
         super().__init__()
@@ -59,6 +60,9 @@ class HEATMAP(nn.Module):
         self.diff_uncertainty_loss = UncertaintyLoss()
         self.dice_uncertainty_loss = UncertaintyLoss()
 
+        self.similarity_metric = HeatmapMetric(SimilarityMetric())
+        self.iou_metric = HeatmapMetric(IOUMetric())
+
     def forward(self, image, mask=None, kpts_xy=None, kpts_visible=None):
         B, _, H, W = image.shape
         datas = {"input": image}
@@ -79,6 +83,10 @@ class HEATMAP(nn.Module):
             elif self.task == "mask":
                 assert mask is not None, "mask must be provided for training"
                 heatmap_target = mask
+
+            heatmap_target_type = heatmap_target.type()
+            heatmap_target_objectness = torch.max(heatmap_target, dim=1, keepdim=True).values
+            heatmap_target = torch.cat([1-heatmap_target_objectness, heatmap_target], dim=1)
 
             # main loss
             total_loss, bce_loss, focal_loss, diff_loss, dice_loss \
@@ -122,19 +130,23 @@ class HEATMAP(nn.Module):
                 assert mask is not None, "mask must be provided for training"
                 heatmap_target = mask
 
+            heatmap_target_type = heatmap_target.type()
+            heatmap_target_objectness = torch.max(heatmap_target, dim=1, keepdim=True).values
+            heatmap_target = torch.cat([1-heatmap_target_objectness, heatmap_target], dim=1)
+
             similarity = self.get_similarity(heatmap, heatmap_target)
-            dice = self.get_dice(heatmap, heatmap_target)
+            iou = self.get_iou(heatmap, heatmap_target)
 
             # eval outputs
             outputs = {
                 "similarity": similarity,
-                "dice": dice,
+                "iou": iou,
             }
 
         else:
             # Export
             outputs = heatmap.sigmoid()
-            
+
         return outputs
     
     # losses
@@ -159,19 +171,19 @@ class HEATMAP(nn.Module):
         bce_loss = self.bce_loss(_pred, _target.round())
         focal_loss = self.focal_loss(_pred, _target.round())
         diff_loss  = self.diff_loss(_pred.sigmoid(), _target)
-        dice_loss = self.dice_loss(_pred.sigmoid().round(), _target.round())
+        dice_loss = self.dice_loss(_pred.sigmoid().round(), _target.gt(0).float())
 
         if uncertainty:
             # uncertainty weight
             if self.task == "kpts":
-                diff_loss_weight = 5
-                dice_loss_weight = 2
-            elif self.task == "mask":
                 diff_loss_weight = 2
-                dice_loss_weight = 5
+                dice_loss_weight = 1
+            elif self.task == "mask":
+                diff_loss_weight = 1
+                dice_loss_weight = 2
 
-            bce_loss = self.bce_uncertainty_loss(bce_loss)
-            focal_loss = self.bce_uncertainty_loss(focal_loss)
+            bce_loss = self.bce_uncertainty_loss(bce_loss, 10)
+            focal_loss = self.bce_uncertainty_loss(focal_loss, 1)
             diff_loss = self.diff_uncertainty_loss(diff_loss, diff_loss_weight)
             dice_loss = self.dice_uncertainty_loss(dice_loss, dice_loss_weight)
 
@@ -198,12 +210,12 @@ class HEATMAP(nn.Module):
         _target = target
 
         with torch.no_grad():
-            similarity = 1 - self.diff_loss(_pred.sigmoid(), _target, debug=True)
+            similarity = self.similarity_metric(_pred.sigmoid(), _target, debug=True)
 
         return similarity
 
-    # dice
-    def get_dice(
+    # iou
+    def get_iou(
         self,
         pred, # B, K, h, w
         target, # B, K, H, W
@@ -214,15 +226,15 @@ class HEATMAP(nn.Module):
         Hp,Wp = pred.shape[2:]
         H,W = target.shape[2:]
         if Hp != H or Wp != W:
-            _pred = F.interpolate(pred, (H,W), mode="bilinear", align_corners=True)
+            _pred = F.interpolate(pred, (H,W), mode="nearest")
         else:
             _pred = pred
         _target = target
 
         with torch.no_grad():
-            dice = 1 - self.dice_loss(_pred.sigmoid().round(), _target.round())
+            iou = self.iou_metric(_pred.sigmoid().round(), _target.gt(0).float())
 
-        return dice
+        return iou
 
     # 生成heatmap
     def centermask(self, kpts_xy, kpts_visible, radius, imgsz_HW):

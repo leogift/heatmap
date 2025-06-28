@@ -157,7 +157,7 @@ class CustomMaskDataset(DatasetBase):
         image = image.transpose(2, 0, 1).copy()
 
         mask_array = []
-        for l in range(len(self.category_list)+1):
+        for l in range(1, len(self.category_list)+1):
             mask_array.append((mask==l).astype(np.uint8))
         mask_array = np.stack(mask_array, axis=0)
 

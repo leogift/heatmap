@@ -53,7 +53,7 @@ class UncertaintyLoss(nn.Module):
         self.weight = nn.Parameter(torch.tensor(0.0), requires_grad=True)
 
     def forward(self, loss, factor=1):
-        return factor*torch.exp(-self.weight)*loss + F.relu(self.weight)
+        return F.relu(factor*torch.exp(-self.weight)*loss + self.weight)
 
 # heatmap loss
 class HeatmapLoss(nn.Module):
@@ -85,34 +85,16 @@ class HeatmapLoss(nn.Module):
                 
         return loss / C
 
-# SmoothL1Loss with beta
-class SmoothL1Loss(nn.Module):
-    def __init__(self, reduction="none", beta=1):
-        super().__init__()
-        assert reduction in [ None, 'none', 'mean', 'sum']
-        self.reduction = reduction
-        self.beta = beta
-
-    def forward(self, pred, target):
-        assert pred.shape == target.shape, \
-            f"expect {pred.shape} == {target.shape}"
-        
-        target = target.type_as(pred)
-
-        loss = F.smooth_l1_loss(pred, target, reduction=self.reduction, beta=self.beta) / (1 - 0.5*self.beta)
-
-        return loss
-
 # balance loss
 class BalanceLoss(nn.Module):
-    def __init__(self, loss_fn=SmoothL1Loss(reduction="none", beta=0.5)):
+    def __init__(self, loss_fn=nn.L1Loss(reduction="none")):
         super().__init__()
         self.loss_fn = loss_fn
 
     def forward(self, pred, target):
         assert pred.shape == target.shape, \
             f"expect {pred.shape} == {target.shape}"
-        
+
         target = target.type_as(pred)
 
         loss = self.loss_fn(pred, target)
@@ -146,68 +128,3 @@ class DiceLoss(nn.Module):
         loss = 1 - 2 * (pred * target).sum() / (pred + target).sum().clamp(1e-7)
 
         return loss
-
-# iou/giou/ciou/diou
-class IOULoss(nn.Module):
-    def __init__(self, loss_type="fusion", reduction="none"):
-        super().__init__()
-        assert reduction in [ None, 'none', 'mean', 'sum']
-        self.reduction = reduction
-        self.loss_type = loss_type
-
-    def forward(self, pred, target, eps=1e-7):
-        assert pred.shape == target.shape
-
-        pred = pred.view(-1, 4)
-        target = target.view(-1, 4)
-
-        if target.shape[0]==0:
-            loss = torch.ones([1], device=pred.device) * 2
-
-        else:
-            tl = torch.max(
-                (pred[:, :2] - pred[:, 2:] / 2), (target[:, :2] - target[:, 2:] / 2)
-            )
-            br = torch.min(
-                (pred[:, :2] + pred[:, 2:] / 2), (target[:, :2] + target[:, 2:] / 2)
-            )
-
-            area_i = torch.prod(br - tl, 1) * (tl < br).type(tl.type()).prod(dim=1)
-            area_u = torch.prod(pred[:, 2:], 1)+torch.prod(target[:, 2:], 1) - area_i
-            iou = area_i / area_u.clamp(eps)
-
-            c_tl = torch.min(
-                (pred[:, :2] - pred[:, 2:] / 2), (target[:, :2] - target[:, 2:] / 2)
-            )
-            c_br = torch.max(
-                (pred[:, :2] + pred[:, 2:] / 2), (target[:, :2] + target[:, 2:] / 2)
-            )
-
-            if self.loss_type in ['giou', 'fusion']:
-                area_c = torch.prod(c_br - c_tl, 1)
-                iou = iou - (area_c - area_u) / area_c.clamp(eps)
-            
-            if self.loss_type in ['ciou', 'fusion']:
-                c2 = torch.sum((c_tl - c_br)**2, 1) # convex (smallest enclosing box) diagonal squared
-                rho2 = torch.sum((pred[:, :2] - target[:, :2])**2, 1) # center distance squared
-                v = (4 / math.pi ** 2) * torch.pow(torch.atan(target[:,2]/ (target[:,3].clamp(eps))) - torch.atan(pred[:,2] / (pred[:,3].clamp(eps))), 2)
-
-                alpha = v / (v - iou + 1).clamp(eps)
-                iou = iou - (rho2 / c2 + v * alpha)  # CIoU
-
-            if self.loss_type == ['diou', 'fusion']:
-                w_c = (c_br - c_tl)[:, 0]
-                h_c = (c_br - c_tl)[:, 1]
-                w_d = (pred[:, :2] - target[:, :2])[:, 0]
-                h_d = (pred[:, :2] - target[:, :2])[:, 1]
-                iou = iou - (w_d ** 2 + h_d ** 2) / (w_c ** 2 + h_c ** 2).clamp(eps)
-
-            loss = 1.0 - iou
-
-        if self.reduction == "mean":
-            loss = loss.mean()
-        elif self.reduction == "sum":
-            loss = loss.sum()
-
-        return loss
-

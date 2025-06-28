@@ -62,6 +62,42 @@ class BaseConv(nn.Module):
         return self.act(self.conv(x))
 
 
+class Bottleneck(nn.Module):
+    # bottleneck
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        expansion=0.5,
+        act="silu",
+        drop_rate=0.,
+    ):
+        super().__init__()
+        hidden_channels = int(out_channels * expansion)
+        self.conv1 = BaseConv(in_channels, 
+                        hidden_channels, 3, stride=1, act=act)
+        self.conv2 = BaseConv(hidden_channels,
+                        out_channels, 3, stride=1, act="")
+
+        self.act = get_activation(act)()
+
+        self.use_add = in_channels == out_channels
+        self.drop   = nn.Dropout(drop_rate) if drop_rate > 0. else nn.Identity()
+
+    def forward(self, x):
+        y = self.conv1(x)
+        y = self.conv2(y)
+
+        if self.training:
+            y = self.drop(y)
+
+        if self.use_add:
+            y = y + x
+        
+        y = self.act(y)
+        return y
+
+
 class RepSConv(nn.Module):
     # Standard bottleneck
     def __init__(
@@ -140,21 +176,29 @@ class RepSConv(nn.Module):
         delattr(self, "cv_1x1")
 
 
-class RepBottleneck(RepSConv):
-    # Standard bottleneck
+class RepBottleneck(nn.Module):
+    # Rep bottleneck
     def __init__(
         self,
         in_channels,
         out_channels,
+        expansion=0.5,
         act="silu",
         drop_rate=0.,
     ):
-        super().__init__(in_channels, out_channels, act, drop_rate)
+        super().__init__()
+        hidden_channels = int(out_channels * expansion)
+        self.conv1 = RepSConv(in_channels, hidden_channels, act=act)
+        self.conv2 = RepSConv(hidden_channels, out_channels, act="")
+
+        self.act = get_activation(act)()
+
         self.use_add = in_channels == out_channels
+        self.drop   = nn.Dropout(drop_rate) if drop_rate > 0. else nn.Identity()
 
     def forward(self, x):
-        y = self.cv(x) + self.cv_1x1(x)
-        y = self.act(y)
+        y = self.conv1(x)
+        y = self.conv2(y)
 
         if self.training:
             y = self.drop(y)
@@ -162,15 +206,7 @@ class RepBottleneck(RepSConv):
         if self.use_add:
             y = y + x
 
-        return y
-
-    def fuseforward(self, x):
-        y = self.repSConv(x)
         y = self.act(y)
-
-        if self.use_add:
-            y = y + x
-
         return y
 
 
@@ -359,7 +395,7 @@ class C2aLayer(nn.Module):
         
         self.cv1 = BaseConv(in_channels, 2 * self.hidden_channels, 1, stride=1, act=act)
         self.m = nn.ModuleList(
-            RepSConv(
+            RepBottleneck(
                 self.hidden_channels, self.hidden_channels, act=act, drop_rate=drop_rate
             )
             for _ in range(n)
@@ -371,11 +407,8 @@ class C2aLayer(nn.Module):
         x = self.cv1(x)
         x_1, x_2 = x.split((self.hidden_channels, self.hidden_channels), 1)
 
-        x_m = x_2
         for idx in range(len(self.m)):
             x_2 = self.m[idx](x_2)
-            x_m = x_m + x_2
-        x_2 = x_m
 
         if self.training:
             y = torch.cat((self.droppath(x), x_2), dim=1)

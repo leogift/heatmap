@@ -8,7 +8,6 @@ from .compat import *
 from .dist import *
 from .ema import *
 from .logger import setup_logger
-from .loss_utils import *
 from .lr_scheduler import LRScheduler
 from .metric import *
 from .model_utils import *

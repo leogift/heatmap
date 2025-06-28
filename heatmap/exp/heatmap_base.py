@@ -44,7 +44,7 @@ class Exp(BaseExp):
         # prob of applying erase aug
         self.erase_prob = 0.5
         # prob of applying mirror aug
-        self.mirror_prob = 0
+        self.mirror_prob = 0.1
         # prob of applying affine aug
         self.affine_prob = 0.5
         # affine parameters

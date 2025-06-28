@@ -4,7 +4,7 @@
 
 import torch.nn as nn
 
-from heatmap.models.network_blocks import get_activation
+from heatmap.models.network_blocks import get_activation, BaseConv
 from heatmap.utils import initialize_weights
 
 class AUXHeatmapHead(nn.Module):
@@ -23,22 +23,18 @@ class AUXHeatmapHead(nn.Module):
         self.preds = nn.ModuleList()
         for i in range(len(in_channels)):
             self.stems.append(
-                nn.Sequential(*[
-	                nn.Conv2d(
-	                    int(in_channels[i]), 
-	                    int(in_channels[0]), 
-	                    kernel_size=3,
-	                    stride=1,
-	                    padding=1,
-	                    bias=True
-	                ),
-					get_activation(act)()
-				])
+                BaseConv(
+	                int(in_channels[i]), 
+                    int(in_channels[0]), 
+                    ksize=1,
+                    stride=1,
+                    act=act,
+                )
             )
             self.preds.append(
                 nn.Conv2d(
                     int(in_channels[0]),
-                    num_heatmap,
+                    num_heatmap+1,
                     kernel_size=1,
                     bias=True)
             )

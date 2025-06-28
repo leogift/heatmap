@@ -96,17 +96,20 @@ class Exp(BaseExp):
                     AUXHeatmapHead(
                         in_features=("fpn3", "fpn4", "fpn5"),
                         in_channels=self.channels,
-                        num_heatmap=len(self.category_list)
+                        num_heatmap=len(self.category_list),
+                        act=self.act
                     ),
                     AUXHeatmapHead(
                         in_features=("pan3", "pan4", "pan5"),
                         in_channels=self.channels,
-                        num_heatmap=len(self.category_list)
+                        num_heatmap=len(self.category_list),
+                        act=self.act, 
                     ),
                     AUXHeatmapHead(
                         in_features=("feature3", "feature4", "feature5"),
                         in_channels=self.channels,
-                        num_heatmap=len(self.category_list)
+                        num_heatmap=len(self.category_list),
+                        act=self.act, 
                     ),
                 ]
             

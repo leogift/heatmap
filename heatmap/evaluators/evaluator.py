@@ -87,7 +87,7 @@ class Evaluator:
         """
         logger.info("Evaluate postprocess.")
 
-        metric_keys = ["similarity", "dice"]
+        metric_keys = ["similarity", "iou"]
         metric_list_dict = {}
         for key in metric_keys:
             metric_list_dict[key] = []
